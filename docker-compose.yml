@@ -1,0 +1,75 @@
+x-backend: &backend
+  image: nginx:alpine
+  restart: unless-stopped
+  labels:
+    - autoheal=true
+  healthcheck:
+    test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+    interval: 5s
+    timeout: 2s
+    retries: 2
+    start_period: 5s
+
+services:
+  web1:
+    <<: *backend
+    container_name: web1
+    command: sh -c "echo '<h1>Backend Server 1</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+  web2:
+    <<: *backend
+    container_name: web2
+    command: sh -c "echo '<h1>Backend Server 2</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+  web3:
+    <<: *backend
+    container_name: web3
+    command: sh -c "echo '<h1>Backend Server 3</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+
+  haproxy:
+    image: haproxy:lts-alpine
+    container_name: haproxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+      - "192.168.56.10:80:80"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - web1
+      - web2
+      - web3
+
+  autoheal:
+    image: willfarrell/autoheal
+    container_name: autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=5
+      - AUTOHEAL_START_PERIOD=10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - kuma-data:/app/data
+
+  monitor:
+    image: python:3-alpine
+    container_name: monitor
+    restart: unless-stopped
+    command: python -u /app/app.py
+    volumes:
+      - ./monitor:/app:ro
+      - monitor-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - haproxy
+
+volumes:
+  kuma-data:
+  monitor-data:

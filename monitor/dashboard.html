@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Self-Healing Web Cloud - Dashboard</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1320;--card:#141c2e;--line:#25304a;--text:#e6ecf7;--mut:#8b97b3;--ok:#34d399;--warn:#fbbf24;--err:#f87171;--acc:#60a5fa}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:24px 16px 40px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;margin-bottom:18px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:16px;margin:0 0 12px}
+.sub{color:var(--mut);margin:0;max-width:60ch}
+.badge{padding:3px 12px;border-radius:99px;font-size:13px;background:#103a2e;color:var(--ok);align-self:flex-start}
+.badge.off{background:#3d1a1d;color:var(--err)}
+.grid{display:grid;gap:14px;margin-bottom:14px}
+.stats{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.two{grid-template-columns:3fr 2fr}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.k{color:var(--mut);font-size:13px}.v{font-size:28px;font-weight:700}
+.on{color:var(--ok)}.off{color:var(--err)}
+.be{padding:12px 0;border-top:1px solid var(--line)}.be:first-child{border-top:0;padding-top:0}
+.top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pill{padding:2px 10px;border-radius:99px;font-size:13px}
+.s-healthy{background:#103a2e;color:var(--ok)}
+.s-failing,.s-recovering{background:#3b3012;color:var(--warn)}
+.s-out,.s-restarting,.s-unknown{background:#3d1a1d;color:var(--err)}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:8px 0 2px}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.meta{color:var(--mut);font-size:13px}
+.chart{display:flex;align-items:flex-end;gap:14px;height:150px}
+.chart div{flex:1;text-align:center;font-size:12px;color:var(--mut)}
+.chart i{display:block;border-radius:6px 6px 0 0;background:var(--acc);min-height:2px;transition:height .4s}
+.chart div:nth-child(2) i{background:#8b5cf6}.chart div:nth-child(3) i{background:#14b8a6}
+ul{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto}
+li{display:grid;grid-template-columns:8px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+li:first-child{border-top:0}
+.tag{border-radius:4px;background:var(--acc)}.tag.ok{background:var(--ok)}.tag.warn{background:var(--warn)}.tag.err{background:var(--err)}
+.time{color:var(--mut);font-size:12px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>Self-Healing Web Cloud</h1>
+    <p class="sub">Pemantauan langsung dari server: HAProxy, tiga backend, restart policy, dan autoheal.</p>
+  </div>
+  <span class="badge" id="conn">Menghubungkan...</span>
+</header>
+
+<section class="grid stats">
+  <div class="card"><div class="k">Status layanan</div><div class="v" id="svc">-</div></div>
+  <div class="card"><div class="k">Backend sehat</div><div class="v" id="act">-</div></div>
+  <div class="card"><div class="k">Total restart</div><div class="v" id="rst">-</div></div>
+  <div class="card"><div class="k">Waktu respons</div><div class="v" id="rt">-</div></div>
+</section>
+
+<section class="grid two">
+  <div class="card"><h2>Kesehatan backend</h2><div id="bes"></div></div>
+  <div class="card"><h2>Distribusi request</h2><div class="chart" id="chart"></div>
+    <p class="meta">Jumlah request kumulatif per backend dari HAProxy.</p></div>
+</section>
+
+<section class="card">
+  <h2>Aktivitas pemulihan</h2>
+  <ul id="log"></ul>
+</section>
+</main>
+
+<script>
+const LBL={healthy:"Sehat",failing:"Health check gagal",out:"Keluar dari pool",restarting:"Container mati",recovering:"Menunggu 2x check",unknown:"Tidak diketahui"};
+const BAR={healthy:100,failing:60,recovering:50,out:0,restarting:0,unknown:0};
+const $=id=>document.getElementById(id);
+function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+async function tick(){
+  try{
+    const r=await fetch("/api/status",{cache:"no-store",headers:{"ngrok-skip-browser-warning":"1"}});
+    if(!r.ok)throw new Error("status");
+    draw(await r.json());
+  }catch(e){
+    $("conn").textContent="Monitor tidak terjangkau";$("conn").className="badge off";
+  }
+}
+function draw(d){
+  const ago=Math.round(Date.now()/1000-d.updated);
+  $("conn").textContent="Live";$("conn").className="badge";
+  $("svc").textContent=d.service;$("svc").className="v "+(d.service==="ONLINE"?"on":"off");
+  $("act").textContent=d.backends.filter(b=>b.state==="healthy").length+" / "+d.backends.length;
+  $("rst").textContent=d.restarts_total;
+  $("rt").textContent=d.rt?d.rt+" ms":"-";
+  $("bes").innerHTML=d.backends.map(b=>
+    '<div class="be"><div class="top"><strong>'+esc(b.name)+'</strong><span class="pill s-'+b.state+'">'+(LBL[b.state]||b.state)+'</span></div>'+
+    '<div class="bar"><i style="width:'+(BAR[b.state]||0)+'%"></i></div>'+
+    '<div class="meta">Restart: '+b.restarts+'</div></div>').join("");
+  const mx=Math.max(10,...d.backends.map(b=>b.req));
+  $("chart").innerHTML=d.backends.map(b=>'<div><i style="height:'+Math.round(b.req/mx*120)+'px"></i>'+esc(b.name)+'<br>'+b.req+' req</div>').join("");
+  $("log").innerHTML=d.events.length?d.events.map(e=>
+    '<li><span class="tag '+e.k+'"></span><div>'+esc(e.m)+'<div class="time">'+new Date(e.t*1000).toLocaleTimeString("id-ID",{hour12:false})+'</div></div></li>').join(""):
+    '<li><span class="tag"></span><div>Belum ada kejadian. Sistem berjalan normal.</div></li>';
+}
+tick();setInterval(tick,2000);
+</script>
+</body>
+</html>
