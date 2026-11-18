@@ -30,7 +30,6 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:80"
-      - "192.168.56.10:80:80"
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
