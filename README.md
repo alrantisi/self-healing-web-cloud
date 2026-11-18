@@ -40,5 +40,15 @@ During a failure, the other two backends keep serving requests, and the recovere
 
 ## Notes
 
-- Bind9 (internal DNS zone for hostname-based routing) and Squid (forward proxy) run on the host as systemd services with `Restart=on-failure`; their configuration is not part of this repository.
+- Bind9 (internal DNS zone `kel7.lab` for hostname-based routing) runs on the host as a systemd service with `Restart=on-failure`. Config templates and an installer script are in `bind/`. Squid runs the same way but is not included.
 - Out of scope: HAProxy redundancy (it is a single point of failure), auto-scaling, multi-host orchestration, and HTTPS.
+
+## Deploy on another server
+
+```bash
+git clone git@github.com:alrantisi/self-healing-web-cloud.git && cd self-healing-web-cloud
+docker compose up -d
+sudo ./bind/install.sh <SERVER_IP> <CLIENT_NET>   # optional: internal DNS for kel7.lab
+```
+
+The base compose file binds HAProxy and Uptime Kuma to `127.0.0.1` only. To expose HAProxy on a specific IP, add a git-ignored `docker-compose.override.yml` with an extra port binding. Uptime Kuma data is not included: create the admin account, monitors, and notifications again after the first start.
