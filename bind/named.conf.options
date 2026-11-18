@@ -1,0 +1,7 @@
+options {
+  directory "/var/cache/bind";
+  listen-on { 127.0.0.1; @SERVER_IP@; };
+  listen-on-v6 { none; };
+  allow-query { 127.0.0.1; @CLIENT_NET@; 172.18.0.0/16; };
+  recursion no;
+};

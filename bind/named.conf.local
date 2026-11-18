@@ -1,0 +1,9 @@
+//
+// Do any local configuration here
+//
+
+
+zone "kel7.lab" {
+    type master;
+    file "/etc/bind/db.kel7.lab";
+};

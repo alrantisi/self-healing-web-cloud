@@ -1,0 +1,13 @@
+$TTL 300
+@       IN  SOA ns1.kel7.lab. admin.kel7.lab. (
+            2026111402 ; serial
+            3600       ; refresh
+            900        ; retry
+            604800     ; expire
+            300 )      ; negative cache TTL
+
+@           IN  NS  ns1.kel7.lab.
+ns1         IN  A   @SERVER_IP@
+app         IN  A   @SERVER_IP@
+dashboard   IN  A   @SERVER_IP@
+kuma        IN  A   @SERVER_IP@
