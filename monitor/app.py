@@ -1,4 +1,4 @@
-import csv, io, json, os, socket, threading, time, http.client
+import csv, hmac, io, json, os, socket, threading, time, http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import urlopen
 
@@ -46,6 +46,40 @@ def docker(path):
         return json.loads(body) if r.status == 200 else None
     finally:
         c.close()
+
+
+PIN = os.environ.get("CONTROL_PIN", "")
+ACTIONS = {
+    "crash": ["nginx", "-s", "stop"],
+    "breakhealth": ["rm", "-f", "/usr/share/nginx/html/health"],
+}
+LABEL = {"crash": "crash (nginx stop)", "breakhealth": "rusak health check"}
+ctl_lock = threading.Lock()
+last_try = 0.0
+last_ctl = 0.0
+
+
+def docker_post(path, payload):
+    c = UnixConn()
+    try:
+        data = json.dumps(payload).encode()
+        c.request("POST", path, body=data, headers={"Content-Type": "application/json", "Content-Length": str(len(data))})
+        r = c.getresponse()
+        body = r.read()
+        try:
+            return r.status, (json.loads(body) if body else None)
+        except ValueError:
+            return r.status, None
+    finally:
+        c.close()
+
+
+def docker_exec(name, cmd):
+    st, res = docker_post("/containers/%s/exec" % name, {"Cmd": cmd, "AttachStdout": False, "AttachStderr": False})
+    if st not in (200, 201) or not res or "Id" not in res:
+        return False
+    st, _ = docker_post("/exec/%s/start" % res["Id"], {"Detach": True})
+    return st in (200, 201, 204)
 
 
 def save():
@@ -165,6 +199,48 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def reply(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        global last_try, last_ctl
+        if self.path.split("?")[0] != "/api/control":
+            self.send_error(404)
+            return
+        try:
+            n = max(0, min(int(self.headers.get("Content-Length", 0)), 1024))
+            req = json.loads(self.rfile.read(n) or b"{}")
+            pin = str(req.get("pin", ""))
+            target = str(req.get("target"))
+            action = str(req.get("action"))
+        except Exception:
+            return self.reply(400, {"ok": False, "msg": "permintaan tidak valid"})
+        with ctl_lock:
+            now = time.time()
+            if now - last_try < 2:
+                return self.reply(429, {"ok": False, "msg": "terlalu cepat, coba lagi sebentar"})
+            last_try = now
+        if not PIN:
+            return self.reply(503, {"ok": False, "msg": "kontrol nonaktif: PIN belum diatur"})
+        if not hmac.compare_digest(pin.encode(), PIN.encode()):
+            return self.reply(403, {"ok": False, "msg": "PIN salah"})
+        if target not in BACKENDS or action not in ACTIONS:
+            return self.reply(400, {"ok": False, "msg": "target atau aksi tidak dikenal"})
+        with ctl_lock:
+            if now - last_ctl < 10:
+                return self.reply(429, {"ok": False, "msg": "tunggu 10 detik antar aksi"})
+            last_ctl = now
+        ok = docker_exec(target, ACTIONS[action])
+        with lock:
+            event("warn" if ok else "err", "Uji manual: %s pada %s %s" % (LABEL[action], target, "dijalankan" if ok else "GAGAL"))
+        return self.reply(200 if ok else 502, {"ok": ok, "msg": "perintah dikirim" if ok else "gagal menjalankan perintah"})
 
     def log_message(self, *a):
         pass

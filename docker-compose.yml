@@ -62,6 +62,8 @@ services:
     container_name: monitor
     restart: unless-stopped
     command: python -u /app/app.py
+    environment:
+      - CONTROL_PIN=${CONTROL_PIN:-}
     volumes:
       - ./monitor:/app:ro
       - monitor-data:/data
