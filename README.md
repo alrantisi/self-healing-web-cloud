@@ -17,6 +17,9 @@ docker-compose.yml     HAProxy, 3 backends, autoheal, Uptime Kuma, monitor
 haproxy/haproxy.cfg    Load balancer and health check configuration
 monitor/app.py         Status API and event tracking
 monitor/dashboard.html Live dashboard
+web/                   Backend page, copied into nginx at start by start.sh
+scripts/kuma-setup.py  Uptime Kuma setup script
+.env.example           Template for the dashboard test PIN
 ```
 
 ## Run
@@ -24,7 +27,7 @@ monitor/dashboard.html Live dashboard
 ```bash
 docker compose up -d
 docker compose ps
-for i in $(seq 1 6); do curl -s localhost:8080 | grep -o "Backend Server [0-9]"; done
+for i in $(seq 1 6); do curl -s localhost:8080/whoami.txt; done
 ```
 
 Each backend returns a page with its own identity, so you can see the round-robin distribution. The dashboard is served at `/dashboard` through HAProxy.
@@ -38,6 +41,43 @@ docker exec web1 rm /usr/share/nginx/html/health  # health check fails: autoheal
 ```
 
 During a failure, the other two backends keep serving requests, and the recovered backend rejoins the pool after two successful health checks.
+
+## Resilience test panel
+
+The dashboard has a panel that breaks a backend on purpose, so the recovery can be watched live. It is protected by a PIN stored in `.env` (git-ignored). Without a PIN the buttons stay disabled.
+
+```bash
+read -s -p "PIN: " P; printf 'CONTROL_PIN=%s\n' "$P" > .env; chmod 600 .env; unset P
+docker compose up -d monitor
+```
+
+Use letters and digits only. `.env.example` shows the expected format.
+
+| Action | What it does | Recovered by |
+|---|---|---|
+| `crash` | `nginx -s stop` inside the backend | restart policy |
+| `breakhealth` | removes `/health` from the backend | autoheal |
+
+Safeguards in `monitor/app.py`: only `web1`, `web2`, `web3` are accepted as targets, only the two fixed actions above exist (no free commands), the PIN is compared in constant time, attempts are limited to one per 2 seconds, and successful actions to one per 10 seconds.
+
+Limits: the PIN is a simple gate, not user authentication. The `monitor` container talks to the Docker API through `docker.sock`. Mounting it with `:ro` only affects the socket file, not the API calls, so access to this endpoint is effectively access to Docker on the host. Do not expose it without a PIN.
+
+## Uptime Kuma setup
+
+`scripts/kuma-setup.py` configures a fresh Uptime Kuma (tested with 1.23.17): admin account, a Discord notification, an HTTP monitor for the load balancer, and a DNS monitor for Bind9. It is idempotent, so running it again skips what already exists. Credentials come only from environment variables and are never stored in the repo.
+
+```bash
+export KUMA_USER=admin
+read -s -p "Kuma password: " KUMA_PASS; export KUMA_PASS; echo
+read -s -p "Discord webhook: " DISCORD_WEBHOOK; export DISCORD_WEBHOOK; echo
+docker run --rm --network self-healing-web-cloud_default \
+  -e KUMA_USER -e KUMA_PASS -e DISCORD_WEBHOOK \
+  -v "$PWD/scripts:/scripts:ro" python:3-alpine \
+  sh -c "pip install -q uptime-kuma-api2 && python /scripts/kuma-setup.py"
+unset KUMA_PASS DISCORD_WEBHOOK
+```
+
+The network name is `<project folder>_default`. If Kuma already has an account, `KUMA_USER` and `KUMA_PASS` must match it. The DNS monitor asks the resolver in `DNS_SERVER` (default `10.33.109.92`), so change it for another server.
 
 ## Notes
 
