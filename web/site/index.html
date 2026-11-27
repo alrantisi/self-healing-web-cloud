@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__SERVER__ | Self-Healing Web</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1320;--card:#141c2e;--line:#25304a;--text:#e6ecf7;--mut:#8b97b3;--ok:#34d399;--err:#f87171;--acc:#60a5fa}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 40px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:16px;margin:0 0 10px}
+.m{color:var(--mut);margin:4px 0}.err{color:var(--err)}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+.big{font-size:44px;font-weight:700;color:var(--acc);line-height:1.1}
+button,input{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button{cursor:pointer;background:#1c2740}button:hover:not(:disabled){border-color:var(--acc)}button:disabled{opacity:.5}
+input{width:100%;font-size:16px}
+.row{display:flex;align-items:center;gap:10px;margin:6px 0}.row span{width:48px}.row b{width:24px;text-align:right}
+.row i{display:block;height:12px;border-radius:6px;background:var(--ok);min-width:2px;transition:width .3s}
+.add{display:flex;gap:8px}
+ul{list-style:none;padding:0;margin:10px 0 0}
+li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);word-break:break-word}
+</style></head><body><main>
+<h1>Self-Healing Web Cloud</h1>
+<p class="m">Halaman contoh yang dilayani cluster tiga backend di belakang HAProxy.</p>
+<section class="c"><h2>Server yang melayani halaman ini</h2>
+<div class="big">__SERVER__</div>
+<p class="m">Jam server: <span id="clock">-</span></p>
+<p class="m">Muat ulang beberapa kali: tiap permintaan bisa dilayani server yang berbeda.</p></section>
+<section class="c"><h2>Uji load balancer</h2>
+<p class="m">Mengirim 9 permintaan berurutan dan menghitung server yang menjawab. Matikan satu backend lalu uji lagi.</p>
+<button id="lb">Jalankan uji</button><div id="res"></div></section>
+<section class="c"><h2>Catatan</h2>
+<p class="m">Tersimpan di browser (localStorage), jadi tetap ada walau server yang melayani berganti atau mati.</p>
+<div class="add"><input id="ni" maxlength="200" placeholder="Tulis catatan"><button id="add">Tambah</button></div>
+<ul id="nl"></ul></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+fetch("/whoami.txt?t="+Date.now(),{cache:"no-store"}).then(r=>{const d=r.headers.get("Date");if(d)$("clock").textContent=new Date(d).toLocaleTimeString("id-ID",{hour12:false});}).catch(()=>{});
+$("lb").onclick=async()=>{
+  const b=$("lb");b.disabled=true;$("res").innerHTML='<p class="m">Menguji...</p>';
+  const n={};let fail=0;
+  for(let i=0;i<9;i++){
+    try{
+      const r=await fetch("/whoami.txt?x="+Math.random(),{cache:"no-store",headers:{"ngrok-skip-browser-warning":"1"}});
+      if(!r.ok)throw 0;
+      const t=(await r.text()).trim();n[t]=(n[t]||0)+1;
+    }catch(e){fail++;}
+  }
+  $("res").innerHTML=["web1","web2","web3"].map(k=>'<div class="row"><span>'+k+'</span><i style="width:'+Math.round((n[k]||0)/9*100)+'%"></i><b>'+(n[k]||0)+'</b></div>').join("")+(fail?'<p class="err">Permintaan gagal: '+fail+'</p>':'');
+  b.disabled=false;
+};
+let notes=[];
+try{notes=JSON.parse(localStorage.getItem("notes")||"[]");}catch(e){}
+function save(){try{localStorage.setItem("notes",JSON.stringify(notes));}catch(e){}}
+function show(){
+  const ul=$("nl");ul.innerHTML="";
+  notes.forEach((t,i)=>{
+    const li=document.createElement("li"),s=document.createElement("span"),x=document.createElement("button");
+    s.textContent=t;x.textContent="Hapus";
+    x.onclick=()=>{notes.splice(i,1);save();show();};
+    li.append(s,x);ul.append(li);
+  });
+}
+$("add").onclick=()=>{const v=$("ni").value.trim();if(!v)return;notes.unshift(v);notes=notes.slice(0,30);$("ni").value="";save();show();};
+$("ni").addEventListener("keydown",e=>{if(e.key==="Enter")$("add").click();});
+show();
+</script></body></html>

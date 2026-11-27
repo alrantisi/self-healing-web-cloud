@@ -3,6 +3,8 @@ x-backend: &backend
   restart: unless-stopped
   labels:
     - autoheal=true
+  volumes:
+    - ./web:/web-src:ro
   healthcheck:
     test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
     interval: 5s
@@ -14,15 +16,15 @@ services:
   web1:
     <<: *backend
     container_name: web1
-    command: sh -c "echo '<h1>Backend Server 1</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+    command: ["sh", "/web-src/start.sh", "web1"]
   web2:
     <<: *backend
     container_name: web2
-    command: sh -c "echo '<h1>Backend Server 2</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+    command: ["sh", "/web-src/start.sh", "web2"]
   web3:
     <<: *backend
     container_name: web3
-    command: sh -c "echo '<h1>Backend Server 3</h1>' > /usr/share/nginx/html/index.html && echo ok > /usr/share/nginx/html/health && nginx -g 'daemon off;'"
+    command: ["sh", "/web-src/start.sh", "web3"]
 
   haproxy:
     image: haproxy:lts-alpine
