@@ -32,8 +32,9 @@ Each backend returns a page with its own identity, so you can see the round-robi
 ## Failure tests
 
 ```bash
-docker kill web2                  # crashed container: restart policy brings it back
-docker exec web2 nginx -s stop    # stopped app: health check fails, autoheal restarts it
+docker exec web2 nginx -s stop                    # main process stops: restart policy starts it again
+docker exec web1 rm /usr/share/nginx/html/health  # health check fails: autoheal restarts the container
+# note: docker kill is treated as a manual stop, so it does not trigger the restart policy
 ```
 
 During a failure, the other two backends keep serving requests, and the recovered backend rejoins the pool after two successful health checks.
